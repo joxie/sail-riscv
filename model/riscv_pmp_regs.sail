@@ -32,6 +32,15 @@ bitfield Pmpcfg_ent : bits(8) = {
   R : 0         /* read */
 }
 
+bitfield Mseccfg_ent : xlenbits = {
+  RLB : 2,
+  MMWP : 1,       /* not matched */
+  MML : 0         /* matched */
+}
+
+register pmplock_recorded : int
+register mseccfg  : Mseccfg_ent
+
 register pmp0cfg  : Pmpcfg_ent
 register pmp1cfg  : Pmpcfg_ent
 register pmp2cfg  : Pmpcfg_ent
@@ -86,15 +95,22 @@ function pmpReadCfgReg(n) = {
 }
 
 /* Helpers to handle locked entries */
-function pmpLocked(cfg: Pmpcfg_ent) -> bool =
+function pmpLockBit(cfg: Pmpcfg_ent) -> bool =
    cfg.L() == 0b1
+   
+function pmpLocked(cfg: Pmpcfg_ent) -> bool =
+   (cfg.L() == 0b1) & (mseccfg.RLB() == 0b0)
 
 function pmpTORLocked(cfg: Pmpcfg_ent) -> bool =
-   (cfg.L() == 0b1) & (pmpAddrMatchType_of_bits(cfg.A()) == TOR)
+   (cfg.L() == 0b1) & (mseccfg.RLB() == 0b0) & (pmpAddrMatchType_of_bits(cfg.A()) == TOR)
 
 function pmpWriteCfg(cfg: Pmpcfg_ent, v: bits(8)) -> Pmpcfg_ent =
   if pmpLocked(cfg) then cfg
-  else Mk_Pmpcfg_ent(v & 0x9f)  // Bits 5 and 6 are zero.
+  else { if v[7] == bitone then pmplock_recorded = 1;
+         if (v[0] == bitone) | (mseccfg.MML() == 0b1)  // when R = 1 or MML, allow W bit v[1] = 1
+         then Mk_Pmpcfg_ent(v & 0x9f)       // Bits 5 and 6 are zero.
+         else Mk_Pmpcfg_ent(v & 0x9c)       // MASK v[1] to 0
+  }  
 
 val pmpWriteCfgReg : forall 'n, 0 <= 'n < 4 . (atom('n), xlenbits) -> unit effect {rreg, wreg}
 function pmpWriteCfgReg(n, v) = {
@@ -148,3 +164,10 @@ function pmpWriteAddr(locked: bool, tor_locked: bool, reg: xlenbits, v: xlenbits
   if   sizeof(xlen) == 32
   then { if (locked | tor_locked) then reg else v }
   else { if (locked | tor_locked) then reg else EXTZ(v[53..0]) }
+
+
+function mseccfgWrite(reg: xlenbits, v: xlenbits) -> xlenbits =
+  if   (mseccfg.RLB() == 0b0) & (pmplock_recorded == 1)
+  then reg | (v & EXTZ(0b11))
+  else (reg & EXTZ(0b11)) | (v & EXTZ(0b111))
+

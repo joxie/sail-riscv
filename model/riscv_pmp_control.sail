@@ -37,14 +37,42 @@ function pmpCheckRWX(ent, acc) = {
 }
 
 // this needs to be called with the effective current privilege.
-val pmpCheckPerms: (Pmpcfg_ent, AccessType(ext_access_type), Privilege) -> bool
+val pmpCheckPerms: (Pmpcfg_ent, AccessType(ext_access_type), Privilege) -> bool effect {rreg}
 function pmpCheckPerms(ent, acc, priv) = {
-  match priv {
-    Machine => if   pmpLocked(ent)
+  if mseccfg.MML() == 0b1
+  then
+  {
+      if (ent.R() == 0b0 & ent.W() == 0b1)
+      then {
+          if (pmpLockBit(ent))
+          then {
+              match acc {
+                  Execute(_) => true,
+                  Read(_)   => (priv == Machine) & (ent.X() == 0b1),
+                  _         => false
+              }
+          }
+          else {
+              match acc {
+                  Read(_)   => true,
+                  Write(_)  => (priv == Machine) | (ent.X() == 0b1),
+                  _         => false
+              }
+          }
+      }
+      else {
+          if (priv == Machine) == pmpLockBit(ent) 
+          then pmpCheckRWX(ent, acc)
+          else false
+      }
+  }
+  else 
+      match priv {
+          Machine => if   pmpLockBit(ent)
                then pmpCheckRWX(ent, acc)
                else true,
-    _       => pmpCheckRWX(ent, acc)
-  }
+          _       => pmpCheckRWX(ent, acc)
+      }
 }
 
 /* matching logic */
@@ -57,7 +85,7 @@ function pmpMatchAddr(addr: xlenbits, width: xlenbits, rng: pmp_addr_range) -> p
     Some((lo, hi)) => if   hi <_u lo   /* to handle mis-configuration */
                       then PMP_NoMatch
                       else {
-                        if      (addr + width <_u lo) | (hi <_u addr)
+                        if      (addr + width <_u lo) | (hi <=_u addr)
                         then    PMP_NoMatch
                         else if (lo <=_u addr) & (addr + width <=_u hi)
                         then    PMP_Match
@@ -150,7 +178,9 @@ function pmpCheck forall 'n, 'n > 0. (addr: xlenbits, width: atom('n), acc: Acce
     PMP_Success  => true,
     PMP_Fail     => false,
     PMP_Continue => match priv {
-                      Machine => true,
+                      Machine => if mseccfg.MMWP() == 0b1
+                                 then false
+                                 else true,
                       _       => false
                     }
   }}}}}}}}}}}}}}}};
@@ -166,6 +196,12 @@ function pmpCheck forall 'n, 'n > 0. (addr: xlenbits, width: atom('n), acc: Acce
 }
 
 function init_pmp() -> unit = {
+//  Mk_Mseccfg_ent(mseccfg, EXTZ(0b000));      
+  mseccfg->RLB() = 0b0;
+  mseccfg->MML() = 0b0;
+  mseccfg->MMWP() = 0b0;
+  pmplock_recorded = 0;
+  
   pmp0cfg  = update_A(pmp0cfg,  pmpAddrMatchType_to_bits(OFF));
   pmp1cfg  = update_A(pmp1cfg,  pmpAddrMatchType_to_bits(OFF));
   pmp2cfg  = update_A(pmp2cfg,  pmpAddrMatchType_to_bits(OFF));
