@@ -61,9 +61,18 @@ function pmpCheckPerms(ent, acc, priv) = {
           }
       }
       else {
-          if (priv == Machine) == pmpLockBit(ent) 
-          then pmpCheckRWX(ent, acc)
-          else false
+          if (ent.R() == 0b1 & ent.W() == 0b1 & ent.X() == 0b1 & pmpLockBit(ent))
+          then {
+              match acc {
+                  Read(_) => true,
+                  _       => false
+              }
+          }
+          else {
+              if (priv == Machine) == pmpLockBit(ent) 
+              then pmpCheckRWX(ent, acc)
+              else false
+          }
       }
   }
   else 
