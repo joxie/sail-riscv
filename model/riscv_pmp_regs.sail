@@ -38,7 +38,6 @@ bitfield Mseccfg_ent : xlenbits = {
   MML : 0         /* matched */
 }
 
-register pmplock_recorded : int
 register mseccfg  : Mseccfg_ent
 
 register pmp0cfg  : Pmpcfg_ent
@@ -106,8 +105,7 @@ function pmpTORLocked(cfg: Pmpcfg_ent) -> bool =
 
 function pmpWriteCfg(cfg: Pmpcfg_ent, v: bits(8)) -> Pmpcfg_ent =
   if pmpLocked(cfg) then cfg
-  else { if v[7] == bitone then pmplock_recorded = 1;
-         if (v[0] == bitone) | (mseccfg.MML() == 0b1)  // when R = 1 or MML, allow W bit v[1] = 1
+  else { if (v[0] == bitone) | (mseccfg.MML() == 0b1)  // when R = 1 or MML, allow W bit v[1] = 1
          then Mk_Pmpcfg_ent(v & 0x9f)       // Bits 5 and 6 are zero.
          else Mk_Pmpcfg_ent(v & 0x9c)       // MASK v[1] to 0
   }  
@@ -167,7 +165,14 @@ function pmpWriteAddr(locked: bool, tor_locked: bool, reg: xlenbits, v: xlenbits
 
 
 function mseccfgWrite(reg: xlenbits, v: xlenbits) -> xlenbits =
-  if   (mseccfg.RLB() == 0b0) & (pmplock_recorded == 1)
-  then reg | (v & EXTZ(0b11))
+  if   (mseccfg.RLB() == 0b0) & (v[2] == bitone) /* to set RLB, need to check PMPCFG_L */
+  then {
+    if (pmp0cfg.L() == 0b1 | pmp1cfg.L() == 0b1 | pmp2cfg.L() == 0b1 | pmp3cfg.L() == 0b1 
+      | pmp4cfg.L() == 0b1 | pmp5cfg.L() == 0b1 | pmp6cfg.L() == 0b1 | pmp7cfg.L() == 0b1 
+      | pmp8cfg.L() == 0b1 | pmp9cfg.L() == 0b1 | pmp10cfg.L() == 0b1 | pmp11cfg.L() == 0b1 
+      | pmp12cfg.L() == 0b1 | pmp13cfg.L() == 0b1 | pmp14cfg.L() == 0b1 | pmp15cfg.L() == 0b1) 
+    then reg | (v & EXTZ(0b11))
+    else reg | (v & EXTZ(0b111))
+  }
   else (reg & EXTZ(0b11)) | (v & EXTZ(0b111))
 

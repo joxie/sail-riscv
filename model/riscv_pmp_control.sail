@@ -209,7 +209,6 @@ function init_pmp() -> unit = {
   mseccfg->RLB() = 0b0;
   mseccfg->MML() = 0b0;
   mseccfg->MMWP() = 0b0;
-  pmplock_recorded = 0;
   
   pmp0cfg  = update_A(pmp0cfg,  pmpAddrMatchType_to_bits(OFF));
   pmp1cfg  = update_A(pmp1cfg,  pmpAddrMatchType_to_bits(OFF));
